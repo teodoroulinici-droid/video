@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sguardo">
+<title>Sguardo – il video parte quando non guardi</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1115'/%3E%3Cpath d='M8 32c6-10 14-16 24-16s18 6 24 16c-6 10-14 16-24 16S14 42 8 32z' fill='none' stroke='%237c9cff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%237c9cff'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e8eaf0; --muted:#9aa3b2; --accent:#7c9cff; --accent2:#5b7cf0;
+    --ok:#3ecf8e; --warn:#ffb547; --bad:#ff5d6c; --idle:#6b7280;
+    --radius:16px;
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  body{padding:calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(24px + var(--safe-b)) calc(16px + var(--safe-l))}
+  .wrap{max-width:980px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand svg{width:36px;height:36px;flex:none}
+  .brand h1{font-size:22px;margin:0;letter-spacing:.2px}
+  .brand p{margin:0;color:var(--muted);font-size:13px}
+  .grid{display:grid;gap:16px;grid-template-columns:1fr}
+  @media (min-width:860px){ .grid{grid-template-columns:1.05fr .95fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+  .card h2{font-size:15px;margin:0 0 12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+
+  /* Stato */
+  .status{display:flex;align-items:center;gap:14px}
+  .dot{width:56px;height:56px;border-radius:50%;flex:none;background:var(--idle);
+    box-shadow:0 0 0 6px color-mix(in srgb,var(--idle) 22%,transparent);transition:background .25s,box-shadow .25s}
+  .status[data-state="look"] .dot{background:var(--ok);box-shadow:0 0 0 6px color-mix(in srgb,var(--ok) 25%,transparent)}
+  .status[data-state="wait"] .dot{background:var(--warn);box-shadow:0 0 0 6px color-mix(in srgb,var(--warn) 25%,transparent)}
+  .status[data-state="away"] .dot{background:var(--bad);box-shadow:0 0 0 6px color-mix(in srgb,var(--bad) 25%,transparent);animation:pulse 1s infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 12px color-mix(in srgb,var(--bad) 10%,transparent)}}
+  .status .t1{font-size:20px;font-weight:700}
+  .status .t2{color:var(--muted);font-size:14px;min-height:1.4em}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .stat{background:var(--panel2);border-radius:12px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+  .stat span{font-size:12px;color:var(--muted)}
+
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  button,.btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    border-radius:12px;padding:12px 16px;font:inherit;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;
+    transition:transform .08s,background .2s,border-color .2s}
+  button:active{transform:scale(.98)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .primary:hover{background:var(--accent)}
+  .danger{background:#3a1d22;border-color:#5c2a31;color:#ffd5da}
+  .ghost{background:transparent}
+  .grow{flex:1 1 140px}
+  .small{padding:8px 12px;min-height:38px;font-size:14px}
+
+  /* Anteprima fotocamera */
+  .preview{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;margin-top:14px}
+  .preview video,.preview canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .preview .ph{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center;padding:20px}
+  .preview.hide-cam video{opacity:0}
+  .debug{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);margin-top:8px;white-space:pre-wrap}
+
+  /* Impostazioni */
+  .field{padding:12px 0;border-top:1px solid var(--line)}
+  .field:first-of-type{border-top:0;padding-top:0}
+  .field label.title{display:flex;justify-content:space-between;gap:8px;font-weight:600;margin-bottom:6px}
+  .field label.title output{color:var(--accent);font-variant-numeric:tabular-nums}
+  .hint{color:var(--muted);font-size:13px;margin:4px 0 0}
+  input[type=range]{width:100%;accent-color:var(--accent);height:28px}
+  select,input[type=url],input[type=text]{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:10px;padding:11px 12px;font:inherit}
+  .row{display:flex;gap:8px;align-items:center}
+  .switch{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
+  .switch input{appearance:none;width:48px;height:28px;border-radius:999px;background:var(--line);position:relative;flex:none;cursor:pointer;transition:background .2s}
+  .switch input::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .2s}
+  .switch input:checked{background:var(--accent2)}
+  .switch input:checked::after{left:23px}
+  .file-btn{position:relative;overflow:hidden}
+  .file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .current{font-size:14px;color:var(--muted);margin-top:8px;word-break:break-all}
+  .current b{color:var(--text)}
+
+  .banner{border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:14px;display:none}
+  .banner.show{display:block}
+  .banner.err{background:#3a1d22;border:1px solid #5c2a31;color:#ffd5da}
+  .banner.info{background:#1b2440;border:1px solid #2d3b6b;color:#d6e0ff}
+
+  /* Video sovrapposto */
+  #overlay{position:fixed;inset:0;z-index:50;background:#000;display:flex;align-items:center;justify-content:center}
+  #overlay[hidden]{display:none}
+  #overlay video{width:100%;height:100%;object-fit:contain;background:#000}
+  #overlay.mini{inset:auto calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) auto;width:min(46vw,420px);aspect-ratio:16/9;
+    border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.6);border:1px solid var(--line)}
+  .ov-btns{position:absolute;top:calc(12px + var(--safe-t));right:calc(12px + var(--safe-r));display:flex;gap:8px;z-index:2}
+  #overlay.mini .ov-btns{top:8px;right:8px}
+  .ov-btns button{background:rgba(0,0,0,.55);border-color:rgba(255,255,255,.2);backdrop-filter:blur(6px);min-height:40px;padding:8px 12px}
+  .ov-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:#fff;font-size:20px}
+  .ov-msg[hidden]{display:none}
+
+  /* Calibrazione */
+  #calib{position:fixed;inset:0;z-index:60;background:rgba(10,12,16,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px}
+  #calib[hidden]{display:none}
+  .target{width:70px;height:70px;border-radius:50%;border:3px solid var(--accent);display:grid;place-items:center}
+  .target::after{content:"";width:16px;height:16px;border-radius:50%;background:var(--accent)}
+  #calib h3{margin:0;font-size:22px}
+  #calib p{margin:0;color:var(--muted);max-width:420px}
+  .bar{width:min(320px,80vw);height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s linear}
+
+  /* Avvisi */
+  #toast{position:fixed;left:50%;bottom:calc(20px + var(--safe-b));transform:translateX(-50%) translateY(20px);opacity:0;
+    background:#262b36;border:1px solid var(--line);color:var(--text);padding:12px 16px;border-radius:12px;z-index:80;
+    transition:opacity .25s,transform .25s;max-width:min(92vw,520px);text-align:center;font-size:15px;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  details summary{cursor:pointer;color:var(--muted);font-size:14px;margin-top:12px}
+  footer{color:var(--muted);font-size:12px;text-align:center;margin-top:20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1e222b"/><path d="M8 32c6-10 14-16 24-16s18 6 24 16c-6 10-14 16-24 16S14 42 8 32z" fill="none" stroke="#7c9cff" stroke-width="4"/><circle cx="32" cy="32" r="8" fill="#7c9cff"/></svg>
+      <div><h1>Sguardo</h1><p>Il video parte quando non guardi lo schermo</p></div>
+    </div>
+    <button id="btnFs" class="ghost small" title="Schermo intero">⛶ Schermo intero</button>
+  </header>
+
+  <div id="bannerErr" class="banner err" role="alert"></div>
+  <div id="bannerInfo" class="banner info"></div>
+
+  <div class="grid">
+    <!-- Colonna sinistra: stato e fotocamera -->
+    <section class="card">
+      <h2>Stato</h2>
+      <div id="status" class="status" data-state="idle" aria-live="polite">
+        <div class="dot"></div>
+        <div>
+          <div class="t1" id="stTitle">Spento</div>
+          <div class="t2" id="stSub">Premi «Avvia» per iniziare</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="cntAway">0</b><span>Volte distratto</span></div>
+        <div class="stat"><b id="timeAway">0:00</b><span>Tempo lontano</span></div>
+        <div class="stat"><b id="timeOn">0:00</b><span>Tempo attivo</span></div>
+      </div>
+      <div class="actions">
+        <button id="btnStart" class="primary grow">▶ Avvia</button>
+        <button id="btnStop" class="danger grow" hidden>■ Ferma</button>
+        <button id="btnCalib" class="grow">◎ Calibra</button>
+        <button id="btnTest" class="grow">🎬 Prova video</button>
+      </div>
+      <div id="preview" class="preview">
+        <video id="cam" playsinline muted autoplay></video>
+        <canvas id="cv"></canvas>
+        <div class="ph" id="camPh">La fotocamera è spenta.<br>Le immagini restano sul tuo dispositivo e non vengono inviate a nessuno.</div>
+      </div>
+      <details id="dbgBox">
+        <summary>Dettagli tecnici</summary>
+        <div class="debug" id="dbg">—</div>
+        <div class="actions"><button id="btnReset" class="small">Ripristina impostazioni</button><button id="btnResetStats" class="small">Azzera contatori</button></div>
+      </details>
+    </section>
+
+    <!-- Colonna destra: impostazioni -->
+    <section class="card">
+      <h2>Impostazioni</h2>
+
+      <div class="field">
+        <label class="title">Video da mostrare</label>
+        <div class="row">
+          <label class="btn file-btn grow">📁 Scegli un video dal dispositivo
+            <input id="fileInput" type="file" accept="video/*">
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="urlInput" type="url" placeholder="…oppure incolla un link diretto a un video (.mp4)" inputmode="url" autocomplete="off">
+          <button id="btnUrl" class="small">Usa</button>
+        </div>
+        <div class="current" id="curVideo">Nessun video scelto.</div>
+        <p class="hint">I link di YouTube, Instagram o TikTok non funzionano: serve un file video o un link che finisce con .mp4 / .webm.</p>
+      </div>
+
+      <div class="field">
+        <label class="title" for="sensitivity">Sensibilità <output id="o_sensitivity"></output></label>
+        <input id="sensitivity" data-setting="sensitivity" type="range" min="1" max="10" step="1">
+        <p class="hint">Più alta = basta girare poco la testa o gli occhi perché il video parta.</p>
+      </div>
+
+      <div class="field">
+        <label class="title" for="awayDelay">Attesa prima del video <output id="o_awayDelay"></output></label>
+        <input id="awayDelay" data-setting="awayDelay" type="range" min="0.5" max="10" step="0.5">
+        <p class="hint">Per quanto tempo devi distogliere lo sguardo prima che il video compaia.</p>
+      </div>
+
+      <div class="field">
+        <label class="title" for="onReturn">Quando torni a guardare</label>
+        <select id="onReturn" data-setting="onReturn">
+          <option value="pause">Nascondi il video e mettilo in pausa</option>
+          <option value="restart">Nascondi il video e la prossima volta ricomincia da capo</option>
+          <option value="keep">Lascia il video aperto (lo chiudo io con ✕)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="title" for="size">Dimensione del video</label>
+        <select id="size" data-setting="size">
+          <option value="full">A tutto schermo</option>
+          <option value="mini">Finestra piccola in un angolo</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="title" for="volume">Volume <output id="o_volume"></output></label>
+        <input id="volume" data-setting="volume" type="range" min="0" max="1" step="0.05">
+      </div>
+
+      <div class="field">
+        <label class="switch">Ripeti il video in loop <input type="checkbox" data-setting="loop"></label>
+      </div>
+      <div class="field">
+        <label class="switch">Controlla anche gli occhi (non solo la testa) <input type="checkbox" data-setting="useEyes"></label>
+        <p class="hint">Se dà falsi allarmi (per esempio con gli occhiali), prova a spegnerlo.</p>
+      </div>
+      <div class="field">
+        <label class="switch">Suono di avviso quando parte il video <input type="checkbox" data-setting="beep"></label>
+      </div>
+      <div class="field">
+        <label class="switch">Mostra l'immagine della fotocamera <input type="checkbox" data-setting="showCam"></label>
+      </div>
+      <div class="field">
+        <label class="switch">Tieni lo schermo acceso <input type="checkbox" data-setting="wakeLock"></label>
+      </div>
+    </section>
+  </div>
+
+  <footer>Tutto avviene sul tuo dispositivo: nessuna immagine della fotocamera viene salvata o inviata.</footer>
+</div>
+
+<!-- Video che compare -->
+<div id="overlay" hidden>
+  <video id="player" playsinline preload="auto"></video>
+  <div class="ov-msg" id="ovMsg" hidden>👀 Ehi, non stai guardando lo schermo!<br><small style="font-size:15px;opacity:.75">(Scegli un video nelle impostazioni per vederlo qui)</small></div>
+  <div class="ov-btns">
+    <button id="btnUnmute" hidden>🔊 Attiva audio</button>
+    <button id="btnClose" aria-label="Chiudi video">✕</button>
+  </div>
+</div>
+
+<!-- Calibrazione -->
+<div id="calib" hidden>
+  <div class="target"></div>
+  <h3 id="calTitle">Calibrazione</h3>
+  <p id="calText">Guarda il punto al centro e tieni la testa ferma, come quando guardi normalmente lo schermo.</p>
+  <div class="bar"><i id="calBar"></i></div>
+  <button id="btnCalCancel" class="small ghost">Annulla</button>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script type="module">
+/* =========================================================
+   Sguardo – rileva se guardi lo schermo e mostra un video
+   quando distogli lo sguardo. Tutto gira nel browser.
+   ========================================================= */
+
+const MP_VERSION = "0.10.14";
+const MP_URL    = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/vision_bundle.mjs`;
+const WASM_URL  = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`;
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+const S_KEY = "sguardo.settings.v1";
+const B_KEY = "sguardo.baseline.v1";
+const C_KEY = "sguardo.stats.v1";
+
+const DEFAULTS = {
+  sensitivity: 5,
+  awayDelay: 1.5,
+  backDelay: 0.4,
+  onReturn: "pause",
+  size: "full",
+  volume: 0.8,
+  loop: true,
+  useEyes: true,
+  beep: false,
+  showCam: true,
+  wakeLock: true,
+  videoUrl: ""
+};
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  status: $("status"), stTitle: $("stTitle"), stSub: $("stSub"),
+  cntAway: $("cntAway"), timeAway: $("timeAway"), timeOn: $("timeOn"),
+  btnStart: $("btnStart"), btnStop: $("btnStop"), btnCalib: $("btnCalib"), btnTest: $("btnTest"),
+  btnFs: $("btnFs"), btnReset: $("btnReset"), btnResetStats: $("btnResetStats"),
+  preview: $("preview"), cam: $("cam"), cv: $("cv"), camPh: $("camPh"), dbg: $("dbg"),
+  fileInput: $("fileInput"), urlInput: $("urlInput"), btnUrl: $("btnUrl"), curVideo: $("curVideo"),
+  overlay: $("overlay"), player: $("player"), ovMsg: $("ovMsg"), btnClose: $("btnClose"), btnUnmute: $("btnUnmute"),
+  calib: $("calib"), calTitle: $("calTitle"), calText: $("calText"), calBar: $("calBar"), btnCalCancel: $("btnCalCancel"),
+  toast: $("toast"), bannerErr: $("bannerErr"), bannerInfo: $("bannerInfo")
+};
+const ctx = el.cv.getContext("2d");
+
+/* ---------- Memoria locale (con protezione dagli errori) ---------- */
+function readJSON(key) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
+}
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* memoria non disponibile */ }
+}
+let settings = { ...DEFAULTS, ...(readJSON(S_KEY) || {}) };
+let baseline = readJSON(B_KEY);
+let stats = { count: 0, awayMs: 0, ...(readJSON(C_KEY) || {}) };
+
+/* IndexedDB per ricordare il video scelto dal dispositivo */
+function idbOpen() {
+  return new Promise((res, rej) => {
+    if (!("indexedDB" in window)) return rej(new Error("no idb"));
+    const r = indexedDB.open("sguardo", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("files");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put(val, key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("files", "readonly");
+    const rq = tx.objectStore("files").get(key);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function idbDel(key) {
+  const db = await idbOpen();
+  return new Promise((res) => {
+    const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").delete(key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => res();
+  });
+}
+
+/* ---------- Avvisi ---------- */
+let toastTimer;
+function toast(msg, ms = 2800) {
+  el.toast.textContent = msg;
+  el.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove("show"), ms);
+}
+function showError(html) { el.bannerErr.innerHTML = html; el.bannerErr.classList.add("show"); }
+function clearError() { el.bannerErr.classList.remove("show"); el.bannerErr.innerHTML = ""; }
+function showInfo(html) { el.bannerInfo.innerHTML = html; el.bannerInfo.classList.add("show"); }
+function clearInfo() { el.bannerInfo.classList.remove("show"); }
+
+/* ---------- Formattazione ---------- */
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
+}
+
+/* ---------- Impostazioni nell'interfaccia ---------- */
+function labelFor(key, v) {
+  if (key === "sensitivity") return `${v}/10`;
+  if (key === "awayDelay") return `${Number(v).toFixed(1).replace(".", ",")} s`;
+  if (key === "volume") return `${Math.round(v * 100)}%`;
+  return String(v);
+}
+function renderSettings() {
+  document.querySelectorAll("[data-setting]").forEach((input) => {
+    const key = input.dataset.setting;
+    if (input.type === "checkbox") input.checked = !!settings[key];
+    else input.value = settings[key];
+    const out = $("o_" + key);
+    if (out) out.textContent = labelFor(key, settings[key]);
+  });
+  applySettings();
+}
+function applySettings() {
+  el.preview.classList.toggle("hide-cam", !settings.showCam);
+  el.overlay.classList.toggle("mini", settings.size === "mini");
+  el.player.loop = !!settings.loop;
+  el.player.volume = Number(settings.volume);
+  if (running) settings.wakeLock ? requestWakeLock() : releaseWakeLock();
+}
+document.querySelectorAll("[data-setting]").forEach((input) => {
+  const key = input.dataset.setting;
+  const handler = () => {
+    let v;
+    if (input.type === "checkbox") v = input.checked;
+    else if (input.type === "range") v = Number(input.value);
+    else v = input.value;
+    settings[key] = v;
+    const out = $("o_" + key);
+    if (out) out.textContent = labelFor(key, v);
+    writeJSON(S_KEY, settings);
+    applySettings();
+  };
+  input.addEventListener("input", handler);
+  input.addEventListener("change", handler);
+});
+
+/* ---------- Scelta del video ---------- */
+let hasVideo = false;
+let currentBlobUrl = null;
+
+function setVideoSrc(src, label) {
+  if (currentBlobUrl && currentBlobUrl !== src) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
+  if (src.startsWith("blob:")) currentBlobUrl = src;
+  el.player.src = src;
+  el.player.load();
+  hasVideo = true;
+  primed = false;
+  el.curVideo.innerHTML = `Video attuale: <b></b>`;
+  el.curVideo.querySelector("b").textContent = label;
+}
+
+el.fileInput.addEventListener("change", async () => {
+  const f = el.fileInput.files && el.fileInput.files[0];
+  if (!f) return;
+  setVideoSrc(URL.createObjectURL(f), f.name);
+  settings.videoUrl = "";
+  writeJSON(S_KEY, settings);
+  el.urlInput.value = "";
+  try { await idbPut("video", { blob: f, name: f.name }); toast("Video salvato ✓ Lo ritroverai anche la prossima volta."); }
+  catch { toast("Video scelto ✓ (non posso ricordarlo dopo la chiusura)"); }
+  primeVideo();
+});
+
+el.btnUrl.addEventListener("click", async () => {
+  const url = el.urlInput.value.trim();
+  if (!/^https?:\/\//i.test(url)) { toast("Incolla un link che inizia con https://"); return; }
+  if (/youtu\.?be|instagram\.com|tiktok\.com|facebook\.com/i.test(url)) {
+    toast("I link di YouTube/Instagram/TikTok non si possono riprodurre qui. Serve un link diretto a un file .mp4.", 4500);
+    return;
+  }
+  setVideoSrc(url, url);
+  settings.videoUrl = url;
+  writeJSON(S_KEY, settings);
+  try { await idbDel("video"); } catch {}
+  toast("Link impostato ✓");
+  primeVideo();
+});
+
+el.player.addEventListener("error", () => {
+  if (!hasVideo) return;
+  toast("Non riesco a riprodurre questo video. Prova con un altro file o un altro link.", 4500);
+});
+
+async function restoreVideo() {
+  if (settings.videoUrl) { setVideoSrc(settings.videoUrl, settings.videoUrl); el.urlInput.value = settings.videoUrl; return; }
+  try {
+    const rec = await idbGet("video");
+    if (rec && rec.blob) setVideoSrc(URL.createObjectURL(rec.blob), rec.name || "video salvato");
+  } catch {}
+}
+
+/* Sblocca la riproduzione con audio: i browser lo permettono solo dopo un tocco */
+let primed = false;
+function primeVideo() {
+  if (!hasVideo || primed) return;
+  const p = el.player;
+  const wasMuted = p.muted;
+  p.muted = true;
+  const pr = p.play();
+  if (pr && pr.then) {
+    pr.then(() => { p.pause(); p.currentTime = 0; p.muted = wasMuted; primed = true; })
+      .catch(() => { p.muted = wasMuted; });
+  }
+}
+
+/* ---------- Suono di avviso ---------- */
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch {}
+}
+function beep() {
+  if (!audioCtx) return;
+  try {
+    const t = audioCtx.currentTime;
+    [0, 0.18].forEach((d, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = i ? 990 : 740;
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.exponentialRampToValueAtTime(0.25, t + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.16);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + d); o.stop(t + d + 0.18);
+    });
+  } catch {}
+}
+
+/* ---------- Schermo sempre acceso ---------- */
+let wakeLock = null;
+async function requestWakeLock() {
+  if (!("wakeLock" in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch {}
+}
+function releaseWakeLock() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+
+/* ---------- Mostra / nascondi il video ---------- */
+let videoShown = false;
+function showVideo(fromTest = false) {
+  videoShown = true;
+  el.overlay.hidden = false;
+  el.overlay.classList.toggle("mini", settings.size === "mini");
+  el.ovMsg.hidden = hasVideo;
+  el.player.style.display = hasVideo ? "" : "none";
+  if (hasVideo) {
+    const p = el.player;
+    p.loop = !!settings.loop;
+    p.volume = Number(settings.volume);
+    p.muted = false;
+    const pr = p.play();
+    if (pr && pr.catch) {
+      pr.then(() => { el.btnUnmute.hidden = true; })
+        .catch(() => {
+          p.muted = true;
+          p.play().catch(() => {});
+          el.btnUnmute.hidden = false;
+        });
+    }
+  }
+  if (settings.beep && !fromTest) beep();
+}
+function hideVideo(reset = false) {
+  videoShown = false;
+  el.overlay.hidden = true;
+  el.btnUnmute.hidden = true;
+  try { el.player.pause(); if (reset) el.player.currentTime = 0; } catch {}
+}
+el.btnClose.addEventListener("click", () => hideVideo(settings.onReturn === "restart"));
+el.btnUnmute.addEventListener("click", () => {
+  el.player.muted = false;
+  el.player.play().then(() => { el.btnUnmute.hidden = true; primed = true; }).catch(() => toast("Il browser blocca l'audio: tocca di nuovo"));
+});
+el.btnTest.addEventListener("click", () => {
+  unlockAudio();
+  showVideo(true);
+  if (!running) toast("Questo è il video che vedrai. Chiudilo con ✕");
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && videoShown) hideVideo(settings.onReturn === "restart"); });
+
+/* ---------- Stato ---------- */
+let lastState = "", lastSub = "";
+function setStatus(state, title, sub = "") {
+  if (state !== lastState) { el.status.dataset.state = state; lastState = state; }
+  if (el.stTitle.textContent !== title) el.stTitle.textContent = title;
+  if (sub !== lastSub) { el.stSub.textContent = sub; lastSub = sub; }
+}
+function renderStats() {
+  el.cntAway.textContent = stats.count;
+  el.timeAway.textContent = fmtTime(stats.awayMs);
+  el.timeOn.textContent = fmtTime(runningMs + (running ? performance.now() - runStart : 0));
+}
+
+/* ---------- Riconoscimento del volto ---------- */
+let landmarker = null;
+async function loadModel() {
+  if (landmarker) return landmarker;
+  const vision = await import(MP_URL);
+  const fileset = await vision.FilesetResolver.forVisionTasks(WASM_URL);
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    minFaceDetectionConfidence: 0.5,
+    minFacePresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+  try { landmarker = await vision.FaceLandmarker.createFromOptions(fileset, opts("GPU")); }
+  catch { landmarker = await vision.FaceLandmarker.createFromOptions(fileset, opts("CPU")); }
+  return landmarker;
+}
+
+/* Misure del volto per ogni fotogramma */
+function measure(res) {
+  const lm = res && res.faceLandmarks && res.faceLandmarks[0];
+  if (!lm) return null;
+  const nose = lm[1], a = lm[234], b = lm[454], top = lm[10], chin = lm[152];
+  const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+  const w = maxX - minX, h = chin.y - top.y;
+  if (w < 0.02 || h < 0.02) return null;
+  const bs = {};
+  const cats = (res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories) || [];
+  for (const c of cats) bs[c.categoryName] = c.score;
+  const g = (k) => bs[k] || 0;
+  return {
+    yaw: (nose.x - minX) / w,                       // testa a destra/sinistra
+    pitch: (nose.y - top.y) / h,                    // testa su/giù
+    gh: ((g("eyeLookOutLeft") - g("eyeLookInLeft")) + (g("eyeLookInRight") - g("eyeLookOutRight"))) / 2, // occhi destra/sinistra
+    gv: ((g("eyeLookUpLeft") + g("eyeLookUpRight")) - (g("eyeLookDownLeft") + g("eyeLookDownRight"))) / 2, // occhi su/giù
+    blink: (g("eyeBlinkLeft") + g("eyeBlinkRight")) / 2,
+    size: w
+  };
+}
+function ema(prev, cur, a) {
+  const o = {};
+  for (const k in cur) o[k] = prev[k] + (cur[k] - prev[k]) * a;
+  return o;
+}
+function thresholds() {
+  const f = 1.6 - settings.sensitivity * 0.12;   // 1 → 1.48 (tollerante) · 10 → 0.40 (severo)
+  return { yaw: 0.10 * f, pitch: 0.085 * f, gh: 0.30 * f, gv: 0.32 * f, blink: 0.55 };
+}
+
+/* Disegno dei punti del volto sull'anteprima */
+function draw(lm, color) {
+  const w = el.cam.videoWidth, h = el.cam.videoHeight;
+  if (!w || !h) return;
+  if (el.cv.width !== w || el.cv.height !== h) { el.cv.width = w; el.cv.height = h; }
+  ctx.clearRect(0, 0, w, h);
+  if (!lm) return;
+  ctx.fillStyle = color;
+  const s = Math.max(1.5, w / 320);
+  for (let i = 0; i < lm.length; i += 3) ctx.fillRect(lm[i].x * w - s / 2, lm[i].y * h - s / 2, s, s);
+  ctx.fillStyle = "#ffffff";
+  for (let i = 468; i < lm.length; i++) ctx.fillRect(lm[i].x * w - s, lm[i].y * h - s, s * 2, s * 2);
+}
+
+/* ---------- Ciclo principale ---------- */
+let running = false, stream = null, rafId = 0, lastVideoTime = -1;
+let smooth = null, awaySince = null, lookSince = null, isAway = false, lastEval = 0;
+let runStart = 0, runningMs = 0, lastStatsSave = 0, lastDbg = 0;
+let calibrating = false, calSamples = [];
+
+function loop() {
+  if (!running) return;
+  rafId = requestAnimationFrame(loop);
+  const now = performance.now();
+  if (el.cam.readyState < 2 || el.cam.currentTime === lastVideoTime) return;
+  lastVideoTime = el.cam.currentTime;
+  let res;
+  try { res = landmarker.detectForVideo(el.cam, now); } catch (e) { console.warn(e); return; }
+  const m = measure(res);
+  smooth = m ? (smooth ? ema(smooth, m, 0.45) : { ...m }) : null;
+  if (calibrating) {
+    if (m) calSamples.push(m);
+    draw(res.faceLandmarks && res.faceLandmarks[0], "#7c9cff");
+    return;
+  }
+  const ev = evaluate(now);
+  draw(res.faceLandmarks && res.faceLandmarks[0], isAway ? "#ff5d6c" : (ev.away ? "#ffb547" : "#3ecf8e"));
+  if (now - lastDbg > 250) { lastDbg = now; renderDebug(ev); renderStats(); }
+}
+
+function evaluate(now) {
+  const dt = lastEval ? Math.min(now - lastEval, 500) : 0;
+  lastEval = now;
+  let away = false, reason = "";
+  let d = null;
+  if (!smooth) { away = true; reason = "Volto non rilevato"; }
+  else if (baseline) {
+    const t = thresholds();
+    d = { yaw: smooth.yaw - baseline.yaw, pitch: smooth.pitch - baseline.pitch, gh: smooth.gh - baseline.gh, gv: smooth.gv - baseline.gv };
+    if (Math.abs(d.yaw) > t.yaw) { away = true; reason = "Testa girata di lato"; }
+    else if (Math.abs(d.pitch) > t.pitch) { away = true; reason = "Testa inclinata in alto o in basso"; }
+    else if (settings.useEyes && smooth.blink > t.blink) { away = true; reason = "Occhi chiusi"; }
+    else if (settings.useEyes && Math.abs(d.gh) > t.gh) { away = true; reason = "Occhi rivolti di lato"; }
+    else if (settings.useEyes && Math.abs(d.gv) > t.gv) { away = true; reason = "Occhi rivolti in alto o in basso"; }
+  }
+
+  if (isAway) stats.awayMs += dt;
+
+  if (away) {
+    lookSince = null;
+    if (awaySince === null) awaySince = now;
+    if (!isAway && now - awaySince >= settings.awayDelay * 1000) goAway();
+  } else {
+    awaySince = null;
+    if (lookSince === null) lookSince = now;
+    if (isAway && now - lookSince >= settings.backDelay * 1000) comeBack();
+  }
+
+  if (isAway) setStatus("away", "Non stai guardando", reason || "Video in riproduzione");
+  else if (away) {
+    const left = Math.max(0, settings.awayDelay - (now - awaySince) / 1000);
+    setStatus("wait", "Stai distogliendo lo sguardo…", `${reason} · il video parte tra ${left.toFixed(1).replace(".", ",")} s`);
+  } else setStatus("look", "Stai guardando lo schermo", baseline ? "Tutto ok" : "Consiglio: premi «Calibra»");
+
+  if (now - lastStatsSave > 3000) { lastStatsSave = now; writeJSON(C_KEY, stats); }
+  return { away, reason, d };
+}
+
+function goAway() {
+  isAway = true;
+  stats.count++;
+  writeJSON(C_KEY, stats);
+  renderStats();
+  showVideo();
+}
+function comeBack() {
+  isAway = false;
+  if (settings.onReturn === "pause") hideVideo(false);
+  else if (settings.onReturn === "restart") hideVideo(true);
+  // "keep": il video resta aperto finché non lo chiudi
+}
+
+function renderDebug(ev) {
+  if (!$("dbgBox").open) return;
+  const t = thresholds();
+  const f = (x) => (x >= 0 ? "+" : "") + x.toFixed(3);
+  if (!smooth) { el.dbg.textContent = "Nessun volto rilevato."; return; }
+  if (!ev.d) { el.dbg.textContent = "Non calibrato: premi «Calibra»."; return; }
+  el.dbg.textContent =
+    `Testa ←→  ${f(ev.d.yaw)}   (limite ±${t.yaw.toFixed(3)})\n` +
+    `Testa ↑↓  ${f(ev.d.pitch)}   (limite ±${t.pitch.toFixed(3)})\n` +
+    `Occhi ←→  ${f(ev.d.gh)}   (limite ±${t.gh.toFixed(3)})\n` +
+    `Occhi ↑↓  ${f(ev.d.gv)}   (limite ±${t.gv.toFixed(3)})\n` +
+    `Occhi chiusi ${smooth.blink.toFixed(2)}   (limite ${t.blink})\n` +
+    `Distanza volto ${(smooth.size * 100).toFixed(0)}%`;
+}
+
+/* ---------- Avvio e arresto ---------- */
+async function start() {
+  if (running) return;
+  clearError();
+  if (!window.isSecureContext) {
+    showError("Il browser permette di usare la fotocamera solo su pagine sicure (indirizzo che inizia con <b>https://</b>) oppure aprendo il file direttamente sul computer. Segui le istruzioni nel file ISTRUZIONI.txt.");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError("Questo browser non supporta la fotocamera. Usa Chrome, Edge, Safari o Firefox aggiornati.");
+    return;
+  }
+  // Questi due vanno fatti subito, durante il tocco sul pulsante
+  unlockAudio();
+  primeVideo();
+
+  el.btnStart.disabled = true;
+  setStatus("wait", "Avvio…", "Chiedo il permesso di usare la fotocamera");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+  } catch (e) {
+    el.btnStart.disabled = false;
+    setStatus("idle", "Spento", "Premi «Avvia» per iniziare");
+    const n = e && e.name;
+    if (n === "NotAllowedError" || n === "SecurityError")
+      showError("Hai negato il permesso della fotocamera. Riattivalo dalle impostazioni del sito nel browser (icona 🔒 o «aA» vicino all'indirizzo), poi ricarica la pagina.");
+    else if (n === "NotFoundError" || n === "OverconstrainedError")
+      showError("Non trovo nessuna fotocamera su questo dispositivo.");
+    else if (n === "NotReadableError")
+      showError("La fotocamera è già usata da un'altra app (per esempio una videochiamata). Chiudila e riprova.");
+    else showError("Non riesco ad accendere la fotocamera: " + (e && e.message ? e.message : n));
+    return;
+  }
+  el.cam.srcObject = stream;
+  try { await el.cam.play(); } catch {}
+  el.camPh.hidden = true;
+
+  setStatus("wait", "Avvio…", "Carico il riconoscimento del volto (solo la prima volta può richiedere qualche secondo)");
+  try { await loadModel(); }
+  catch (e) {
+    console.error(e);
+    showError("Non riesco a scaricare il riconoscimento del volto. Controlla di essere connesso a internet e ricarica la pagina.");
+    stop();
+    return;
+  }
+
+  running = true;
+  runStart = performance.now();
+  lastEval = 0; awaySince = null; lookSince = null; isAway = false; smooth = null; lastVideoTime = -1;
+  el.btnStart.hidden = true; el.btnStart.disabled = false;
+  el.btnStop.hidden = false;
+  if (settings.wakeLock) requestWakeLock();
+  loop();
+  if (!hasVideo) showInfo("Suggerimento: scegli un video nelle impostazioni, altrimenti vedrai solo un messaggio.");
+  if (!baseline) { await new Promise((r) => setTimeout(r, 600)); calibrate(); }
+}
+
+function stop() {
+  running = false;
+  cancelAnimationFrame(rafId);
+  if (runStart) { runningMs += performance.now() - runStart; runStart = 0; }
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  el.cam.srcObject = null;
+  el.camPh.hidden = false;
+  ctx.clearRect(0, 0, el.cv.width, el.cv.height);
+  isAway = false; smooth = null;
+  hideVideo(false);
+  cancelCalibration();
+  releaseWakeLock();
+  writeJSON(C_KEY, stats);
+  el.btnStart.hidden = false; el.btnStart.disabled = false;
+  el.btnStop.hidden = true;
+  setStatus("idle", "Spento", "Premi «Avvia» per iniziare");
+  renderStats();
+}
+
+/* ---------- Calibrazione ---------- */
+let calToken = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function median(arr) { const s = [...arr].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+
+async function calibrate() {
+  if (!running) { toast("Prima premi «Avvia»"); return; }
+  const token = ++calToken;
+  hideVideo(false);
+  isAway = false; awaySince = null; lookSince = null;
+  el.calib.hidden = false;
+  el.calBar.style.width = "0%";
+  el.calTitle.textContent = "Preparati…";
+  el.calText.textContent = "Mettiti nella posizione in cui usi normalmente lo schermo e guarda il punto al centro.";
+  await sleep(1500);
+  if (token !== calToken) return;
+  el.calTitle.textContent = "Guarda il punto e resta fermo";
+  calSamples = [];
+  calibrating = true;
+  const dur = 2500, t0 = performance.now();
+  while (performance.now() - t0 < dur) {
+    if (token !== calToken) return;
+    el.calBar.style.width = Math.min(100, ((performance.now() - t0) / dur) * 100) + "%";
+    await sleep(50);
+  }
+  calibrating = false;
+  el.calib.hidden = true;
+  if (calSamples.length < 8) {
+    toast("Non vedo bene il tuo volto. Mettiti di fronte alla fotocamera, con più luce, e riprova.", 4500);
+    return;
+  }
+  const keys = ["yaw", "pitch", "gh", "gv", "blink", "size"];
+  baseline = {};
+  for (const k of keys) baseline[k] = median(calSamples.map((s) => s[k]));
+  writeJSON(B_KEY, baseline);
+  lastEval = 0; awaySince = null; lookSince = null;
+  toast("Calibrazione completata ✓");
+}
+function cancelCalibration() {
+  calToken++;
+  calibrating = false;
+  el.calib.hidden = true;
+}
+el.btnCalCancel.addEventListener("click", cancelCalibration);
+
+/* ---------- Pulsanti ---------- */
+el.btnStart.addEventListener("click", start);
+el.btnStop.addEventListener("click", stop);
+el.btnCalib.addEventListener("click", () => { unlockAudio(); calibrate(); });
+el.btnReset.addEventListener("click", () => {
+  const url = settings.videoUrl;
+  settings = { ...DEFAULTS, videoUrl: url };
+  writeJSON(S_KEY, settings);
+  renderSettings();
+  toast("Impostazioni ripristinate");
+});
+el.btnResetStats.addEventListener("click", () => {
+  stats = { count: 0, awayMs: 0 };
+  runningMs = 0; if (running) runStart = performance.now();
+  writeJSON(C_KEY, stats);
+  renderStats();
+  toast("Contatori azzerati");
+});
+
+const fsOk = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+if (!fsOk) el.btnFs.hidden = true;
+el.btnFs.addEventListener("click", async () => {
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen());
+    } else {
+      const d = document.documentElement;
+      await (d.requestFullscreen ? d.requestFullscreen() : d.webkitRequestFullscreen());
+    }
+  } catch { toast("Lo schermo intero non è disponibile qui"); }
+});
+
+/* Quando torni sulla pagina, riattiva lo schermo acceso */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && running && settings.wakeLock) requestWakeLock();
+  if (document.visibilityState === "hidden") writeJSON(C_KEY, stats);
+});
+window.addEventListener("pagehide", () => writeJSON(C_KEY, stats));
+
+/* ---------- Partenza ---------- */
+renderSettings();
+renderStats();
+restoreVideo();
+if (!window.isSecureContext) {
+  showError("Attenzione: questa pagina non è aperta in modo sicuro, quindi il browser non darà accesso alla fotocamera. Aprila da un indirizzo <b>https://</b> (vedi ISTRUZIONI.txt).");
+}
+setInterval(() => { if (running) renderStats(); }, 1000);
+</script>
+</body>
+</html>
